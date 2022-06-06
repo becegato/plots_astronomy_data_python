@@ -1,0 +1,203 @@
+'''
+this first block of code only imports the required modules and mounts google
+drive
+'''
+
+import os
+import sys
+import glob
+import string
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy import interpolate
+import matplotlib.patches as mpatches
+
+
+from google.colab import drive
+
+drive.mount('/content/drive',force_remount=True)
+
+#print("import and mounting done")
+
+# the T Pyx data are here (but the program can easily scale up)
+
+aavsoData = '/content/drive/Shareddrives/WOTSAP/novae/tpyx_photometry/TPyx.txt'
+FWOpticalData = '/content/drive/Shareddrives/WOTSAP/novae/tpyx_photometry/tpyx.stout'
+FWNIRData = '/content/drive/Shareddrives/WOTSAP/novae/tpyx_photometry/tpyx_ir.stout'
+
+# function to read AAVSO data
+# this retuns JD and Mag as two Pandas dataframes
+def readAAVSOData(myData,myFilter):
+  df = pd.read_csv(myData)
+  df = df[['JD', 'Magnitude', 'Band']]
+  #print(df)
+  df = df[ df['Band'] == myFilter ]
+  #print(df)
+  # following two lines come from here
+  # https://stackoverflow.com/questions/21771133/finding-non-numeric-rows-in-dataframe-in-pandas
+  data_columns = 'Magnitude'
+  df = (df.drop(data_columns, axis=1).join(df[data_columns].apply(pd.to_numeric, errors='coerce')))
+  #print(df)
+
+  #myJD = df['JD']
+  #myMag = (df['Magnitude'])
+  #return myJD,myMag
+  return df
+
+# function to read Fred Walter's data
+# this returns JD and Mags as two Pandas dataframes
+def readFWData(myData,myFilter):
+  # optical filters available B,V,R,I
+  # NIR filters available J, H, K
+  tmpMyJD = []
+  tmpMyMag = []
+  tmpFile = open(myData)
+  for index,_eachLine in enumerate(tmpFile) :
+    if not "(" in _eachLine and index > 3 :
+     tmpString = _eachLine.split()
+     if tmpString[1] == myFilter:
+      tmpMyJD.append( float(tmpString[0]) + 2450000.0 )
+      tmpMyMag.append( float(tmpString[2]))
+
+  tmpFile.close()
+
+  myJD = pd.DataFrame(tmpMyJD,columns=['JD']) 
+  myMag = pd.DataFrame(tmpMyMag,columns=['Magnitude'])
+
+  return myJD,myMag
+
+#AAVSOJD,AAVSOMag = readAAVSOData(aavsoData,'Vis.')
+#FWVisJD,FWVisMag = readFWData(FWOpticalData,"V")
+#FWKJD,FWKMag = readFWData(FWNIRData,"K")
+
+#print(AAVSOJD)
+'''
+fig = plt.figure(figsize=(12,8))
+
+plt.scatter(AAVSOJD,AAVSOMag,label='AAVSO Vis')
+plt.scatter(FWVisJD,FWVisMag, label="FW V")
+plt.scatter(FWKJD,FWKMag, label="FW K")
+plt.gca().invert_yaxis()
+
+plt.legend()
+
+plt.xlim(2455500.,2456500.)
+print(2456500. - 2455500.)
+'''
+#plt.savefig('/content/drive/Shareddrives/WOTSAP/novae/tpyx_photometry/AAVSO_lc.png')
+
+'''
+This block search for TN's
+'''
+
+def magnit(myData,myFilter):
+  MAG_AA = readAAVSOData(myData,myFilter)
+  #print(MAG_AA)
+  #JD_FW, MAG_FW = readFWData(myData,myFilter)
+  Tn_targets = np.arange(6) + MAG_AA['Magnitude'].min()
+
+
+  # T0:
+  mask = (MAG_AA['Magnitude'] == MAG_AA['Magnitude'].min()) 
+  T0 = MAG_AA[mask]
+  JD_T0 = T0['JD'].values
+  print('JD_T0', JD_T0)
+  print('T0', T0[:1])
+
+# T1:
+  maskt1 = (MAG_AA['Magnitude'] == MAG_AA['Magnitude'].min() +1) & (MAG_AA['JD'] > JD_T0[0])
+  T1 = MAG_AA[maskt1]
+  print('T1', T1[:1])
+
+  T2 = T1 + 
+
+  # T2:
+  maskt2 = (MAG_AA['Magnitude'] == MAG_AA['Magnitude'].min() +2)  & (MAG_AA['JD'] > JD_T0[0])
+  T2 = MAG_AA[maskt2]
+  print('T2', T2[:1])
+
+  # T3:
+  maskt3 = (MAG_AA['Magnitude'] == MAG_AA['Magnitude'].min() +3)  & (MAG_AA['JD'] > JD_T0[0])
+  T3 = MAG_AA[maskt3]
+  print('T3', T3[:1])
+
+  # T4:
+  maskt4 = (MAG_AA['Magnitude'] == MAG_AA['Magnitude'].min() +4)  & (MAG_AA['JD'] > JD_T0[0])
+  T4 = MAG_AA[maskt4]
+  print('T4', T4[:1])
+
+  # T5:
+  maskt5 = (MAG_AA['Magnitude'] == MAG_AA['Magnitude'].min() +5)  & (MAG_AA['JD'] > JD_T0[0])
+  T5 = MAG_AA[maskt5]
+  print('T5', T5[:1])
+
+  intoarr = pd.DataFrame()
+  for T in [T0, T1, T2, T3, T4, T5]: intoarr = intoarr.append(T[:1] if not T[:1].empty else pd.DataFrame(np.full((1, 3), np.nan), columns=T.columns))
+  intoarr.reset_index(drop=True, inplace=True)
+
+  print('magnit Done')
+
+  return intoarr, Tn_targets
+
+'''
+Here the interpolation begins
+'''
+
+
+def interpola(myData,myFilter):
+  mag, Tn_targets = magnit(myData,myFilter)
+
+  #print(mag)
+
+  #mag = mag.sort_values('JD')
+
+  x = mag['JD']
+  y = mag['Magnitude']
+
+  missing = np.isnan(x)
+  not_nan = ~np.isnan(x)
+  x = x[not_nan]
+  y = y[not_nan]
+
+  #print(x)
+  #print(y)
+
+  tck = interpolate.splrep(x, y, s=0)
+  myx = np.linspace(np.min(x), np.max(x), 100)
+  myy = interpolate.splev(myx, tck)
+
+  #print(myy)
+
+  missing_args = np.where(missing)
+  targets = Tn_targets[missing_args]
+
+  idx_targets = [np.argmin(abs(myy - target)) for target in targets]
+
+  x_missing = myx[idx_targets]
+  y_missing = myy[idx_targets]
+
+  plt.figure()
+
+  plt.plot(myx, myy, 'r', label='Cubic Spline', lw=1.)
+  plt.plot(x, y, 'bo', label='Observed', ms=2.5)
+  plt.plot(x_missing, y_missing, 'go', label='Missing', ms=2.5)
+  plt.legend()
+  #plt.title(FN[:-4])
+  plt.xlabel('JD')
+  plt.ylabel('Mag')
+  plt.gca().invert_yaxis() 
+  plt.show()
+  #plt.savefig(FN, dpi = 1000)
+
+  #print('Interpola Done')
+
+
+def main():
+
+  interpola(aavsoData,'Vis.')
+
+# you had defined a "main" function but you were not executing it
+
+if __name__ == "__main__":
+    main()
